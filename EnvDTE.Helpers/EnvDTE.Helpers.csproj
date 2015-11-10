@@ -59,6 +59,7 @@
     <Compile Include="ProjectWrapper.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SolutionWrapper.cs" />
+    <Compile Include="TargetFrameworkEnum.cs" />
     <Compile Include="VisualStudioVersionEnum.cs" />
   </ItemGroup>
   <ItemGroup>

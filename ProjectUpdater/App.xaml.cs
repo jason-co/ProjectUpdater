@@ -13,7 +13,7 @@ namespace ProjectUpdater
             base.OnStartup(e);
 
             var logger = new UpdaterLogger();
-            var window = new Window
+            var window = new MainWindow
             {
                 DataContext = new MainViewModel(logger)
             };

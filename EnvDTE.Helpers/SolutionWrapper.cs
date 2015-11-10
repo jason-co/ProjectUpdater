@@ -13,17 +13,19 @@ namespace EnvDTE.Helpers
         #region fields
 
         private const string SolutionBusyMessage = "(RPC_E_SERVERCALL_RETRYLATER)";
+        private const string ClientProfile = ",Profile=Client";
+        private const string TargetMoniker = ".NETFramework,Version=v{0}{1}";
+        private const string TargetFrameworkMonikerIndex = "TargetFrameworkMoniker";
+
         private const int SolutionWaitTimeInMS = 3000;
 
-        private readonly string[] _projectExtensions = { ".csproj", ".vbproj" };
-
         private readonly IList<ProjectWrapper> _projectWrappers;
+        private readonly IList<ProjectWrapper> _nonUpdatedProjects;
 
         private readonly DTE _dte;
         private readonly string _solutionName;
         private readonly ILogger _logger;
-
-        private FileInfo[] _missingProjects;
+        
 
         #endregion
 
@@ -35,43 +37,96 @@ namespace EnvDTE.Helpers
             _logger = logger;
             _projectWrappers = new List<ProjectWrapper>();
             _dte = EnvDTEFactory.Create(visualStudioVersion);
+
+            _nonUpdatedProjects = new ObservableCollection<ProjectWrapper>();
+            NonUpdatedProjects = new ReadOnlyCollection<ProjectWrapper>(_nonUpdatedProjects);
         }
 
         #endregion
 
         #region public properties
 
-        public FileInfo[] MissingProjects { get { return _missingProjects; } }
+        public IReadOnlyList<ProjectWrapper> NonUpdatedProjects { get; }
 
         #endregion
 
-        #region public methods
-
-        public async Task<bool> AggregateProjects(string rootPath, int iterations = 15)
+        public async Task UpdateTargetFrameworkForProjects(TargetFramework framework)
         {
-            _missingProjects = GetProjectsMissingFromSolution(rootPath).ToArray();
+            await OpenSolution();
 
-            if (_missingProjects.Any())
+            var sourceDirectory = Path.GetFullPath(_solutionName);
+            var suoFiles = (new DirectoryInfo(sourceDirectory)).GetFiles("*.suo");
+            if (!suoFiles.Any())
             {
+                _logger.Log("No .suo file, closing and reopening solution");
+                CloseAsync().Wait();
                 await OpenSolution();
+            }
 
-                _logger.Log("Attempting to add all projects in {0} attempts", iterations);
-                for (int i = 0; i < iterations && _missingProjects.Any(); i++)
+            var iterations = 15;
+
+            _logger.Log("Number of projects updating from the solution: {0}", _projectWrappers.Count());
+            _logger.Log("Attempting to upgrade all projects in {0} attempts", iterations);
+            for (int i = 0; i < iterations; i++)
+            {
+                _logger.Log("************ Attempt {0} ************", i + 1);
+
+                Parallel.ForEach(_projectWrappers, async project =>
                 {
-                    _logger.Log("************ Attempt {0} ************", i + 1);
-
-                    _logger.Log("Number of projects missing from the solution: {0}", _missingProjects.Count());
-
-                    AddProjects(_missingProjects);
-
-                    await AttemptTo(() =>
+                    try
                     {
-                        _missingProjects = _missingProjects.Where(p => _projectWrappers.All(pw => pw.FullName != p.FullName)).ToArray();
-                    });
-                }
+                       await AttemptTo(
+                            () => UpdateProject(project, framework)
+                            );
+                    }
+                    catch (Exception ex)
+                    {
+                        try
+                        {
+                            _nonUpdatedProjects.Add(project);
+                        }
+                        catch (Exception e)
+                        {
+                            _logger.Log("****ERROR***** COM Exception");
 
-                await SaveAsync();
-                await CloseAsync();
+                        }
+                    }
+                });
+            }
+
+            await SaveAsync();
+            await CloseAsync();
+        }
+
+        #region Update Process
+
+        private void UpdateProject(ProjectWrapper project, TargetFramework framework)
+        {
+            if (project.Project.Kind == Constants.vsProjectKindSolutionItems
+                || project.Project.Kind == Constants.vsProjectKindMisc)
+            {
+                project.IsSpecialProject = true;
+                _nonUpdatedProjects.Add(project);
+            }
+            else
+            {
+                if (SetTargetFramework(project.Project, framework))
+                {
+                    project.Reload();
+                    _logger.Log("Project Updated: {0}", project.Name);
+                }
+            }
+        }
+
+        private bool SetTargetFramework(Project project, TargetFramework targetFramework)
+        {
+            var targetMoniker = GetTargetFrameworkMoniker(targetFramework);
+            var currentMoniker = project.Properties.Item(TargetFrameworkMonikerIndex).Value;
+
+            if (!currentMoniker.ToString().Contains("Silverlight")
+                && !Equals(targetMoniker, currentMoniker))
+            {
+                project.Properties.Item(TargetFrameworkMonikerIndex).Value = targetMoniker;
 
                 return true;
             }
@@ -79,90 +134,13 @@ namespace EnvDTE.Helpers
             return false;
         }
 
-        #endregion
-
-        #region Collecting Projects
-
-        private IEnumerable<FileInfo> GetProjectsMissingFromSolution(string rootPath)
+        private string GetTargetFrameworkMoniker(TargetFramework targetFramework, bool isClientProfile = false)
         {
-            var projectsInSolution = GetProjectNamesInSolution();
-            var projectsInDirectory = GetProjectFilesInDirectory(rootPath);
+            var version = targetFramework.ToDescription();
 
-            foreach (var projectFile in projectsInDirectory)
-            {
-                if (!projectsInSolution.Any(p => p.Contains(projectFile.Name)))
-                {
-                    yield return projectFile;
-                }
-            }
-        }
+            var clientProfile = isClientProfile ? ClientProfile : String.Empty;
 
-        private IList<string> GetProjectNamesInSolution()
-        {
-            var projects = new List<string>();
-            if (File.Exists(_solutionName))
-            {
-                var filter = "proj\"";
-                using (var file = new StreamReader(_solutionName))
-                {
-                    string line;
-                    while ((line = file.ReadLine()) != null)
-                    {
-                        if (line.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            var split = line.Split(new[] { "\"" }, StringSplitOptions.RemoveEmptyEntries);
-                            var projectFile = split.FirstOrDefault(s => s.EndsWith("proj", StringComparison.OrdinalIgnoreCase));
-                            var projectName = projectFile.Split(new[] { "\\" }, StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
-
-                            projects.Add(projectName);
-                        }
-                    }
-                }
-
-                _logger.Log("Number of projects currently in the solution: {0}", projects.Count());
-            }
-
-            return projects;
-        }
-
-        private FileInfo[] GetProjectFilesInDirectory(string rootPath)
-        {
-            var directoryInfo = new DirectoryInfo(rootPath);
-
-            return directoryInfo.EnumerateFiles("*", SearchOption.AllDirectories).Where(f => _projectExtensions.Contains(f.Extension)).ToArray();
-        }
-
-        #endregion
-
-        #region Add Projects
-
-        private void AddProjects(FileInfo[] missingProjects)
-        {
-            foreach (var project in missingProjects)
-            {
-                try
-                {
-                    AttemptTo(() =>
-                    {
-                        if (_projectWrappers.All(p => p.FullName != project.FullName))
-                        {
-                            AddProjectFromFile(project.FullName);
-                            _logger.Log("\tProject Added: {0}", project.Name);
-                        }
-                    }, 3).Wait();
-                }
-                catch (Exception)
-                {
-                    _logger.Log("Skipping adding this project for now");
-                }
-            }
-        }
-
-        private void AddProjectFromFile(string fileName)
-        {
-            var project = _dte.Solution.AddFromFile(fileName, false);
-            var wrapper = new ProjectWrapper(project);
-            _projectWrappers.Add(wrapper);
+            return String.Format(TargetMoniker, version, clientProfile);
         }
 
         #endregion
