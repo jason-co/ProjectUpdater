@@ -19,6 +19,7 @@ namespace ProjectUpdater.ViewModel
         private const string SolutionExtension = ".sln";
 
         private readonly ILogger _logger;
+        private readonly IList<ProjectWrapper> _nonUpdatedProjects; 
 
         private string _solutionFileName;
         private bool _isUpdatingProjects;
@@ -30,8 +31,8 @@ namespace ProjectUpdater.ViewModel
 
         private RelayCommand _openSolutionCommand;
         private RelayCommand _aggregateCommand;
-        private RelayCommand _viewMissingProjectsCommand;
-        private RelayCommand _closeMissingProjectsCommand;
+        private RelayCommand _viewNonUpdatedProjectsCommand;
+        private RelayCommand _closeNonUpdatedProjectsCommand;
 
         #endregion
 
@@ -44,6 +45,9 @@ namespace ProjectUpdater.ViewModel
             _selectedVisualStudioVersion = VisualStudioVersion.VisualStudio2015;
             _selectedTargetFramework = TargetFramework.v4_5;
             _logger = logger;
+
+            _nonUpdatedProjects = new ObservableCollection<ProjectWrapper>();
+
         }
 
         #endregion
@@ -51,7 +55,7 @@ namespace ProjectUpdater.ViewModel
         #region properties
 
         public ILogger Logger { get { return _logger; } }
-        public IReadOnlyList<ProjectWrapper> NonUpdatedProjects { get { return _solutionWrapper.NonUpdatedProjects; } }
+        public IList<ProjectWrapper> NonUpdatedProjects { get { return _nonUpdatedProjects; } }
 
         public string SolutionFileName
         {
@@ -93,9 +97,8 @@ namespace ProjectUpdater.ViewModel
 
         public ICommand OpenSolutionCommand => RelayCommand.CreateCommand(ref _openSolutionCommand, OpenSolutionExecute, OpenSolutionCanExecute);
         public ICommand UpdateProjectCommand => RelayCommand.CreateCommand(ref _aggregateCommand, UpdateProjectExecute, UpdateProjectCanExecute);
-        public ICommand ViewMissingProjectsCommand => RelayCommand.CreateCommand(ref _viewMissingProjectsCommand, ViewMissingProjectsExecute, ViewMissingProjectsCanExecute);
-        public ICommand CloseMissingProjectsCommand => RelayCommand.CreateCommand(ref _closeMissingProjectsCommand, CloseMissingProjectsExecute);
-
+        public ICommand ViewNonUpdatedProjectsCommand => RelayCommand.CreateCommand(ref _viewNonUpdatedProjectsCommand, ViewNonUpdatedProjectsExecute, ViewNonUpdatedProjectsCanExecute);
+        public ICommand CloseNonUpdatedProjectsCommand => RelayCommand.CreateCommand(ref _closeNonUpdatedProjectsCommand, CloseNonUpdatedProjectsExecute);
 
         private void OpenSolutionExecute()
         {
@@ -125,18 +128,25 @@ namespace ProjectUpdater.ViewModel
             Task.Run(() => UpdateProjectsAsync());
         }
 
-        private void ViewMissingProjectsExecute()
+        private void ViewNonUpdatedProjectsExecute()
         {
+            _nonUpdatedProjects.Clear();
+            if (_solutionWrapper != null)
+            {
+                foreach (var project in _solutionWrapper.NonUpdatedProjects)
+                {
+                    _nonUpdatedProjects.Add(project);
+                }
+            }
             DisplayNonUpdatedProjects = true;
-            OnPropertyChanged(() => _solutionWrapper.NonUpdatedProjects);
         }
 
-        private bool ViewMissingProjectsCanExecute()
+        private bool ViewNonUpdatedProjectsCanExecute()
         {
             return !IsUpdatingProjects;
         }
 
-        private void CloseMissingProjectsExecute()
+        private void CloseNonUpdatedProjectsExecute()
         {
             DisplayNonUpdatedProjects = false;
         }
@@ -174,7 +184,6 @@ namespace ProjectUpdater.ViewModel
             {
                 BeginUpdateUI(() =>
                 {
-
                     IsUpdatingProjects = false;
 
                     _logger.Log(String.Empty);

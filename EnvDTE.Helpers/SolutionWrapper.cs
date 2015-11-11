@@ -12,6 +12,8 @@ namespace EnvDTE.Helpers
     {
         #region fields
 
+        private static object _nonUpdatedLocker = new object();
+
         private const string SolutionBusyMessage = "(RPC_E_SERVERCALL_RETRYLATER)";
         private const string ClientProfile = ",Profile=Client";
         private const string TargetMoniker = ".NETFramework,Version=v{0}{1}";
@@ -22,10 +24,11 @@ namespace EnvDTE.Helpers
         private readonly IList<ProjectWrapper> _projectWrappers;
         private readonly IList<ProjectWrapper> _nonUpdatedProjects;
 
-        private readonly DTE _dte;
         private readonly string _solutionName;
+        private readonly VisualStudioVersion _visualStudioVersion;
         private readonly ILogger _logger;
-        
+
+        private DTE _dte;
 
         #endregion
 
@@ -34,6 +37,7 @@ namespace EnvDTE.Helpers
         public SolutionWrapper(string solutionName, VisualStudioVersion visualStudioVersion, ILogger logger)
         {
             _solutionName = solutionName;
+            _visualStudioVersion = visualStudioVersion;
             _logger = logger;
             _projectWrappers = new List<ProjectWrapper>();
             _dte = EnvDTEFactory.Create(visualStudioVersion);
@@ -54,43 +58,34 @@ namespace EnvDTE.Helpers
         {
             await OpenSolution();
 
-            var sourceDirectory = Path.GetFullPath(_solutionName);
+            var sourceDirectory = Path.GetDirectoryName(_solutionName);
             var suoFiles = (new DirectoryInfo(sourceDirectory)).GetFiles("*.suo");
             if (!suoFiles.Any())
             {
                 _logger.Log("No .suo file, closing and reopening solution");
-                CloseAsync().Wait();
+                await CloseAsync();
+                _dte = EnvDTEFactory.Create(_visualStudioVersion);
                 await OpenSolution();
             }
 
             var iterations = 15;
 
             _logger.Log("Number of projects updating from the solution: {0}", _projectWrappers.Count());
-            _logger.Log("Attempting to upgrade all projects in {0} attempts", iterations);
-            for (int i = 0; i < iterations; i++)
+            _logger.Log("Attempting to upgrade all projects to version {0} in {1} attempts", framework.ToDescription(), iterations);
+
+            _nonUpdatedProjects.Clear();
+            _projectWrappers.ToList().ForEach(p => _nonUpdatedProjects.Add(p));
+            for (int i = 0; i < iterations && _nonUpdatedProjects.Any(p => !p.IsSpecialProject); i++)
             {
                 _logger.Log("************ Attempt {0} ************", i + 1);
 
-                Parallel.ForEach(_projectWrappers, async project =>
+                var projects = _nonUpdatedProjects.ToArray();
+                Parallel.ForEach(projects, async project =>
                 {
-                    try
+                    await AttemptTo(() =>
                     {
-                       await AttemptTo(
-                            () => UpdateProject(project, framework)
-                            );
-                    }
-                    catch (Exception ex)
-                    {
-                        try
-                        {
-                            _nonUpdatedProjects.Add(project);
-                        }
-                        catch (Exception e)
-                        {
-                            _logger.Log("****ERROR***** COM Exception");
-
-                        }
-                    }
+                        UpdateProject(project, framework);
+                    });
                 });
             }
 
@@ -102,11 +97,12 @@ namespace EnvDTE.Helpers
 
         private void UpdateProject(ProjectWrapper project, TargetFramework framework)
         {
+            project.AttemptToReload();
+
             if (project.Project.Kind == Constants.vsProjectKindSolutionItems
                 || project.Project.Kind == Constants.vsProjectKindMisc)
             {
                 project.IsSpecialProject = true;
-                _nonUpdatedProjects.Add(project);
             }
             else
             {
@@ -114,6 +110,11 @@ namespace EnvDTE.Helpers
                 {
                     project.Reload();
                     _logger.Log("Project Updated: {0}", project.Name);
+                }
+
+                lock (_nonUpdatedLocker)
+                {
+                    _nonUpdatedProjects.Remove(project);
                 }
             }
         }
@@ -129,6 +130,15 @@ namespace EnvDTE.Helpers
                 project.Properties.Item(TargetFrameworkMonikerIndex).Value = targetMoniker;
 
                 return true;
+            }
+
+            if (currentMoniker.ToString().Contains("Silverlight"))
+            {
+                _logger.Log("Ignoring Silverlight project: {0}", project.Name);
+            }
+            else if (Equals(targetMoniker, currentMoniker))
+            {
+                _logger.Log("Project already matches framework: {0}", project.Name);
             }
 
             return false;
@@ -191,9 +201,13 @@ namespace EnvDTE.Helpers
         {
             var projs = _dte.Solution.Projects.Cast<Project>().ToArray();
 
+            _projectWrappers.Clear();
             foreach (var project in projs)
             {
-                CreateProjectWrapper(project);
+                AttemptTo(() =>
+                {
+                    CreateProjectWrapper(project);
+                });
             }
         }
 

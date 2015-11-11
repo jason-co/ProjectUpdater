@@ -34,14 +34,14 @@
 
             <TextBlock Grid.Row="1" Text="Target Framework:" HorizontalAlignment="Right"/>
             <ComboBox Grid.Row="1" Grid.Column="2" Margin="0,0,0,4"
-                 ItemsSource="{Binding VisualStudioVersions}"
-                  SelectedItem="{Binding SelectedVisualStudioVersion}"/>
+                 ItemsSource="{Binding TargetFrameworkVersions}"
+                  SelectedItem="{Binding SelectedTargetFramework}"/>
 
-            <TextBlock Grid.Row="1" Text="Solution:" HorizontalAlignment="Right"/>
-            <TextBox Grid.Row="1" Grid.Column="2" IsReadOnly="True"
+            <TextBlock Grid.Row="2" Text="Solution:" HorizontalAlignment="Right"/>
+            <TextBox Grid.Row="2" Grid.Column="2" IsReadOnly="True"
                  Text="{Binding SolutionFileName}"/>
 
-            <StackPanel Grid.Row="2" Grid.Column="2" Orientation="Horizontal" Margin="0,4,0,4">
+            <StackPanel Grid.Row="3" Grid.Column="2" Orientation="Horizontal" Margin="0,4,0,4">
                 <Button Content="Open" Padding="8,0,8,0" Margin="0,0,8,0"
                     Command="{Binding OpenSolutionCommand}"/>
             </StackPanel>
@@ -61,11 +61,11 @@
                 </ListBox.ItemContainerStyle>
             </ListBox>
 
-            <Button Grid.Row="5" Grid.ColumnSpan="3" Content="Aggregate" Margin="0,8,0,0" Padding="4"
+            <Button Grid.Row="5" Grid.ColumnSpan="3" Content="Update" Margin="0,8,0,0" Padding="4"
                 Command="{Binding UpdateProjectCommand}"/>
 
-            <Button Grid.Row="6" Grid.ColumnSpan="3" Content="View Missing Projects" Margin="0,8,0,0" Padding="4"
-                Command="{Binding ViewMissingProjectsCommand}"/>
+            <Button Grid.Row="6" Grid.ColumnSpan="3" Content="View Non Updated Projects" Margin="0,8,0,0" Padding="4"
+                Command="{Binding ViewNonUpdatedProjectsCommand}"/>
 
         </Grid>
 
@@ -77,12 +77,35 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <ListBox ItemsSource="{Binding MissingProjects}">
+                <ListBox ItemsSource="{Binding NonUpdatedProjects}">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Grid Margin="4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition SharedSizeGroup="NameColumn"/>
+                                                <ColumnDefinition Width="8"/>
+                                                <ColumnDefinition/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding Name}"/>
+                                            <TextBlock Grid.Column="2">
+                                            <Hyperlink  NavigateUri="{Binding DirectoryName}" RequestNavigate="Hyperlink_OnRequestNavigate">
+                                                <TextBlock Text="{Binding Path=DirectoryName}"/>
+                                            </Hyperlink>
+                                            </TextBlock>
+                                        </Grid>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
 
                 </ListBox>
 
                 <Button Grid.Row="1" Grid.ColumnSpan="3" Content="Close" Margin="0,8,0,0" Padding="4"
-                Command="{Binding CloseMissingProjectsCommand}"/>
+                Command="{Binding CloseNonUpdatedProjectsCommand}"/>
             </Grid>
         </Border>
 
