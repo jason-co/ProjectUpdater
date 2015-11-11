@@ -4,12 +4,10 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:viewModel="clr-namespace:ProjectUpdater.ViewModel"
+        xmlns:core="clr-namespace:Core;assembly=Core"
         Height="350" Width="525"
         mc:Ignorable="d" 
         d:DataContext="{d:DesignInstance viewModel:MainViewModel}">
-    <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
-    </Window.Resources>
     <Grid>
         <Grid Margin="12">
             <Grid.ColumnDefinitions>
@@ -28,17 +26,17 @@
             </Grid.RowDefinitions>
 
             <TextBlock Text="Visual Studio Version:" HorizontalAlignment="Right"/>
-            <ComboBox Grid.Column="2" Margin="0,0,0,4"
+            <ComboBox Grid.Column="2" Margin="0,0,0,4" IsEnabled="{Binding Path=IsUpdatingProjects, Converter={x:Static core:InverseBooleanConverter.Default}}"
                  ItemsSource="{Binding VisualStudioVersions}"
                   SelectedItem="{Binding SelectedVisualStudioVersion}"/>
 
             <TextBlock Grid.Row="1" Text="Target Framework:" HorizontalAlignment="Right"/>
-            <ComboBox Grid.Row="1" Grid.Column="2" Margin="0,0,0,4"
+            <ComboBox Grid.Row="1" Grid.Column="2" Margin="0,0,0,4" IsEnabled="{Binding Path=IsUpdatingProjects, Converter={x:Static core:InverseBooleanConverter.Default}}"
                  ItemsSource="{Binding TargetFrameworkVersions}"
                   SelectedItem="{Binding SelectedTargetFramework}"/>
 
             <TextBlock Grid.Row="2" Text="Solution:" HorizontalAlignment="Right"/>
-            <TextBox Grid.Row="2" Grid.Column="2" IsReadOnly="True"
+            <TextBox Grid.Row="2" Grid.Column="2" IsReadOnly="True" IsEnabled="{Binding Path=IsUpdatingProjects, Converter={x:Static core:InverseBooleanConverter.Default}}"
                  Text="{Binding SolutionFileName}"/>
 
             <StackPanel Grid.Row="3" Grid.Column="2" Orientation="Horizontal" Margin="0,4,0,4">
@@ -70,7 +68,7 @@
         </Grid>
 
         <Border Background="#66000000" Padding="12"
-                Visibility="{Binding Path=DisplayNonUpdatedProjects, Converter={StaticResource BooleanToVisibilityConverter}}">
+                Visibility="{Binding Path=DisplayNonUpdatedProjects, Converter={x:Static core:BoolToVisibilityConverter.Default}}">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition/>
