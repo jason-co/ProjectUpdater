@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:viewModel="clr-namespace:ProjectUpdater.ViewModel"
         xmlns:core="clr-namespace:Core;assembly=Core"
+        Title="Project Updater"
         Height="350" Width="525"
         mc:Ignorable="d" 
         d:DataContext="{d:DesignInstance viewModel:MainViewModel}">
